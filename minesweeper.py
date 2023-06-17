@@ -101,31 +101,47 @@ class Sentence():
     def __str__(self):
         return f"{self.cells} = {self.count}"
 
+    '''
+    Under what circumstances do we really know if a cell contains a mine or not?
+    1. if the length of the observing cells is equal to the count
+    2. if count == 0
+    '''
     def known_mines(self):
         """
         Returns the set of all cells in self.cells known to be mines.
         """
-        raise NotImplementedError
+        if len(self.cells) == self.count:
+            return set(self.cells)
+        
+        return set()
 
     def known_safes(self):
         """
         Returns the set of all cells in self.cells known to be safe.
         """
-        raise NotImplementedError
+        if self.count == 0:
+            return set(self.cells)
+        
+        return set()
 
     def mark_mine(self, cell):
         """
         Updates internal knowledge representation given the fact that
         a cell is known to be a mine.
         """
-        raise NotImplementedError
+
+        if cell in self.cells:
+            self.cells.discard(cell)
+            self.count -= 1
 
     def mark_safe(self, cell):
         """
         Updates internal knowledge representation given the fact that
         a cell is known to be safe.
         """
-        raise NotImplementedError
+        
+        if cell in self.cells:
+            self.cells.discard(cell)
 
 
 class MinesweeperAI():
@@ -167,6 +183,25 @@ class MinesweeperAI():
         for sentence in self.knowledge:
             sentence.mark_safe(cell)
 
+    def get_neighbor_cells(self, cell):
+        full_board_cells = { (i, j) for i in range(self.width) for j in range(self.height) }
+        
+        i, j = cell
+        nearby_cells = {
+            (i-1, j-1),
+            (i, j-1),
+            (i+1, j-1),
+            (i-1, j),
+            (i+1, j),
+            (i-1, j+1),
+            (i, j+1),
+            (i+1, j+1),
+        }
+        nearby_cells.discard(cell)
+        nearby_cells.intersection_update(full_board_cells)
+        
+        return nearby_cells
+
     def add_knowledge(self, cell, count):
         """
         Called when the Minesweeper board tells us, for a given
@@ -182,7 +217,71 @@ class MinesweeperAI():
             5) add any new sentences to the AI's knowledge base
                if they can be inferred from existing knowledge
         """
-        raise NotImplementedError
+        
+        # The function should mark the cell as one of the moves made in the game.
+        self.moves_made.add(cell)
+        
+        # The function should mark the cell as a safe cell, updating any sentences that contain the cell as well.
+        self.safes.add(cell)
+        for sentence in self.knowledge:
+            sentence.mark_safe(cell)
+
+        # The function should add a new sentence to the AI’s knowledge base, based on the value of cell and count, to indicate that count of the cell’s neighbors are mines. Be sure to only include cells whose state is still undetermined in the sentence.
+        neighbor_cells = self.get_neighbor_cells(cell)
+        s = Sentence(neighbor_cells, count)
+
+        neighbor_mines = neighbor_cells.intersection(self.mines)
+        for neighbor in neighbor_mines:
+            s.mark_mine(neighbor)
+
+        neighbor_safes = neighbor_mines.intersection(self.safes)
+        for neighbor in neighbor_safes:
+            s.mark_safe(neighbor)
+        
+        self.knowledge.append(s)
+
+        # If, based on any of the sentences in self.knowledge, new cells can be marked as safe or as mines, then the function should do so.
+        for sentence in self.knowledge:
+            known_mines = sentence.known_mines()
+            self.mines = self.mines.union(known_mines)
+
+            known_safes = sentence.known_safes()
+            self.safes = self.safes.union(known_safes)
+
+        for mine in self.mines:
+            self.mark_mine(mine)
+        
+        for safe in self.safes:
+            self.mark_safe(safe)
+
+        # infer new sentences from current knowledge
+        new_knowledge = self.knowledge[:]
+        for s1 in self.knowledge:
+            for s2 in self.knowledge:
+                if s1 != s2 and s1.cells.issubset(s2.cells):
+                    infered_sentence = Sentence(cells=s2.cells-s1.cells, count=s2.count-s1.count)
+                    already_in_knowledge = any([infered_sentence == s for s in self.knowledge])
+                    if not already_in_knowledge:
+                        new_knowledge.append(infered_sentence)
+
+        self.knowledge = new_knowledge
+
+        # after inferences are made, see if there're new known mines and safes
+        for sentence in self.knowledge:
+            known_mines = sentence.known_mines()
+            self.mines = self.mines.union(known_mines)
+
+            known_safes = sentence.known_safes()
+            self.safes = self.safes.union(known_safes)
+
+        for mine in self.mines:
+            self.mark_mine(mine)
+        
+        for safe in self.safes:
+            self.mark_safe(safe)
+
+        print(f'curr knowledge -> ', [str(s) for s in self.knowledge])      
+
 
     def make_safe_move(self):
         """
@@ -193,7 +292,11 @@ class MinesweeperAI():
         This function may use the knowledge in self.mines, self.safes
         and self.moves_made, but should not modify any of those values.
         """
-        raise NotImplementedError
+        not_moved_safe_moves = self.safes - self.moves_made
+        if not not_moved_safe_moves:
+            return None
+        
+        return random.choice(list(not_moved_safe_moves))
 
     def make_random_move(self):
         """
@@ -202,4 +305,11 @@ class MinesweeperAI():
             1) have not already been chosen, and
             2) are not known to be mines
         """
-        raise NotImplementedError
+        
+        full_board_cells = { (i, j) for i in range(self.width) for j in range(self.height) }
+        moves_to_play = full_board_cells - self.moves_made - self.mines
+
+        if not moves_to_play:
+            return None
+        
+        return random.choice(list(moves_to_play))
